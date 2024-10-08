@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  backend:
+    image: public.ecr.aws/breezeware/dynamo-ai-backend:1.0.0
+    container_name: api-server
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./backend/api-app/.env.backend
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
+      - DOCUMENT_CDN_URL=${DOCUMENT_CDN_URL}
+      - AWS_REGION=${AWS_REGION}
+    depends_on:
+      - keycloak
+      - dynamo-postgres-server
+
+  dynamo-postgres-server:
+    build:
+      context: .
+      dockerfile: backend/api-app/Dockerfile
+    container_name: dynamo_postgres_server
+    volumes:
+      - /postgres-datas:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: dynamo_ai_db
+      POSTGRES_USER: dynamo_ai_usr
+      POSTGRES_PASSWORD: dynamo123
+
+  # React JS Frontend
+  frontend:
+    image: public.ecr.aws/breezeware/dynamo-ai-frontend:1.0.0
+    container_name: react-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_DYNAMO_SERVICE_URL: http://backend:8081/api
+      REACT_APP_KEYCLOAK_URL: http://keycloak:8080
+      REACT_APP_KEYCLOAK_REALM: Test
+      REACT_APP_KEYCLOAK_CLIENT_ID: test
+      REACT_APP_DYNAMO_FORM_URL: http://frontend:3000
+    depends_on:
+      - backend
+      - keycloak
+
+  postgres:
+    image: postgres:16
+    container_name: keycloak_postgres
+    volumes:
+      - ./postgres-datas:/var/lib/postgresql/data  # Store the data in the local folder
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: password
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.6
+    command:
+      - start-dev
+    container_name: keycloak_server
+    ports:
+      - "8080:8080"
+    volumes:
+      # Custom Keycloak theme folder
+      - './authentication/keycloak-custom-theme/themes/custom-theme/theme:/opt/keycloak/themes'
+    depends_on:
+      - postgres
+    environment:
+      KC_HOSTNAME: localhost
+      KC_PROXY: edge
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak_postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: password
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info
+
+volumes:
+  postgres-datas:
